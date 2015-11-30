@@ -3,13 +3,15 @@
 # obtain one at https://mozilla.org/MPL/2.0/.
 
 import asyncore
+import getopt
 import socket
+import sys
 
 class ProxyClient(asyncore.dispatcher):
-    def __init__(self, host, port, serverHandler):
+    def __init__(self, address, port, serverHandler):
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connect( (host, port) )
+        self.connect((address, port))
         self.serverHandler = serverHandler
         self.buffer = ''
 
@@ -53,26 +55,23 @@ class ProxyHandler(asyncore.dispatcher_with_send):
                 items = self.inputBuffer.split("\r\n\r\n")
                 remaining = ''
                 if len(items) > 1:
-                    headers, others = items[0],items[1:]
+                    headers, others = items[0], items[1:]
                     remaining = "\r\n\r\n".join(others)
                 else:
                     return
-                headerLines = headers.split('\r\n',1)
+                headerLines = headers.split('\r\n', 1)
                 req = headerLines[0]
-                #for headerLine in headerLines[1]:
-                #    headerName, headerValue = headerLine.split(":")
                 verb, endpoint, version = req.split(' ')
-                host, portString = endpoint.split(':')
+                address, portString = endpoint.split(':')
                 port = int(portString)
-                print "connection requested to %s:%i"%(host,port)
-                if host.endswith(".example.com"):
-                    host = "localhost"
+                print "connection requested to %s:%i" % (address, port)
+                if address.endswith(".example.com"):
+                    address = "localhost"
                     port = 8443
-                print "establishing connection to %s:%i"%(host,port)
-                self.client = ProxyClient(host, port, self)
+                print "establishing connection to %s:%i" % (address, port)
+                self.client = ProxyClient(address, port, self)
                 self.send("HTTP/1.1 200 Connection established\r\n\r\n");
                 self.initialized = True
-                # Only do this once we've got \n\n
                 self.client.sendToServer(remaining)
             else:
                 self.client.sendToServer(toServer)
@@ -85,12 +84,12 @@ class ProxyHandler(asyncore.dispatcher_with_send):
         self.send(toClient)
 
 class ProxyServer(asyncore.dispatcher):
-
-    def __init__(self, host, port):
+    def __init__(self, address, port):
+        print("starting server on %s port %i" % (address, port))
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.set_reuse_addr()
-        self.bind((host, port))
+        self.bind((address, port))
         self.listen(5)
 
     def handle_accept(self):
@@ -99,5 +98,21 @@ class ProxyServer(asyncore.dispatcher):
             sock, addr = pair
             handler = ProxyHandler(sock)
 
-server = ProxyServer('localhost', 8088)
-asyncore.loop()
+def main(argv):
+    address = '0.0.0.0'
+    port = 8088
+
+    try:
+        opts, args = getopt.getopt(argv, "a:p:", ["address=", "port="])
+        for opt, arg in opts:
+            if opt in ("-a", "--address"):
+                address = arg
+            if opt in ("-p", "--port"):
+                port = int(arg)
+    except:
+        print('There was a problem with the options')
+    server = ProxyServer(address, port)
+    asyncore.loop()
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
